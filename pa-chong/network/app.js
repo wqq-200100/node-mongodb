@@ -1,20 +1,23 @@
 import {MongoClient} from "mongodb";
 import express from 'express'
 import cors from "cors";
-const app = express()
 import {login} from "./login.js";
+
+const app = express()
 app.use(cors())
 app.use(express.json())
 app.use(login)
 
 let url = "mongodb://localhost:27017/";
+MongoClient.connect(url, (err, db) => {
+    const myDB = db.db('pa-chong')
+    const mianFeiTable = myDB.collection('免费榜')
+    const userTable = myDB.collection('user')
 
-// 获取榜单所有小说信息
-app.get('/commend', (req, res) => {
-    MongoClient.connect(url, async (err, db) => {
-        const myDB = db.db('pa-chong')
-        const table = myDB.collection('免费榜')
-        await table.find({})
+
+    // 获取榜单所有小说信息
+    app.get('/commend', async (req, res) => {
+        await mianFeiTable.find({})
             .project({
                 title: 1,
                 intro: 1,
@@ -26,32 +29,26 @@ app.get('/commend', (req, res) => {
                 // res就是查询得到的数据 保留需要的数据
                 res.send(r)
             })
+
     })
-})
 
 // 通过小说名查询小说详情
-app.get('/commend/info', (req, res) => {
-    const {title} = req.query
-    MongoClient.connect(url, async (err, db) => {
-        const myDB = db.db('pa-chong')
-        const table = myDB.collection('免费榜')
-        const data = await table.findOne({title}, {
+    app.get('/commend/info', async (req, res) => {
+        const {title} = req.query
+        const data = await mianFeiTable.findOne({title}, {
             projection: {
                 data: 0,
             }
         })
         // projection 过滤需要的字段1 就是要返回  0 不要返回
         res.send(data)
+
     })
-})
 
 // 通过小说名查询小说章节
-app.get('/chapterName', (req, res) => {
-    const {title} = req.query
-    MongoClient.connect(url, async (err, db) => {
-        const myDB = db.db('pa-chong')
-        const table = myDB.collection('免费榜')
-        const data = await table.findOne({title}, {
+    app.get('/chapterName', async (req, res) => {
+        const {title} = req.query
+        const data = await mianFeiTable.findOne({title}, {
             project: {
                 data: 1
             }
@@ -62,18 +59,15 @@ app.get('/chapterName', (req, res) => {
             content: item.content
         })).sort((a, b) => a.cid - b.cid)
         res.send(newData)
+
     })
-})
 
 // 通过章节查内容
-app.get('/chapter', (req, res) => {
-    const {title, cid} = req.query
-    // 把章节名改成章节id 或者章节数 如：1  就是第一章
-    const k = 0
-    MongoClient.connect(url, async (err, db) => {
-        const myDB = db.db('pa-chong')
-        const table = myDB.collection('免费榜')
-        const data = await table.findOne({title})
+    app.get('/chapter', async (req, res) => {
+        const {title, cid} = req.query
+        // 把章节名改成章节id 或者章节数 如：1  就是第一章
+        const k = 0
+        const data = await mianFeiTable.findOne({title})
         let d = data.data.filter(i => i.cid === Number.parseInt(cid))[0]
         if (d) {
             res.send(d)
@@ -81,47 +75,15 @@ app.get('/chapter', (req, res) => {
         } else {
             res.send('没有找到该章节')
         }
-        /*        // for of实现
-                /!*for (const item of data.data) {
-                    if (item.chapterName === chapterName) {
-                        res.send(item.content)
-                    }
-                }*!/
 
-                // for in 实现
-                /!*for (let i in data.data ){
-                    if(data.data[i].chapterName === chapterName){
-                      res.send(data.data[i])
-                    }
-                }*!/
-
-                // map实现 有返回值
-                /!*const datas = data.data.map((i)=>{
-                    if(i.chapterName === chapterName) return i.content
-                })
-                res.send(datas.filter(i=>i))*!/
-
-                // forEach实现 没有返回值
-              /!*  const datas = data.data.forEach(i => {
-                    if (i.chapterName === chapterName) res.send(i.content)
-                })*!/
-
-                // for实现
-                /!*for (let i = 0; i < data.data.length;i++) {
-                    if(data.data[i].chapterName === chapterName) res.send(data.data[i].content)
-                }
-                res.send('no data')*!/*/
     })
-})
 
 // 模糊搜索
-app.get('/search', (req, res) => {
-    const str = `.*${req.query.title}.*`
-    const reg = new RegExp(str)
-    MongoClient.connect(url, async (err, db) => {
-        const myDB = db.db('pa-chong')
-        const table = myDB.collection('免费榜')
-        const a = await table.find({
+    app.get('/search', async (req, res) => {
+        const str = `.*${req.query.title}.*`
+        const reg = new RegExp(str)
+
+        const a = await mianFeiTable.find({
             title: {
                 $regex: reg
             }
@@ -134,9 +96,27 @@ app.get('/search', (req, res) => {
             }
         }).toArray()
         res.send(a)
+
+    })
+
+    app.get('/addLike', async (req, res) => {
+        let {user_id, title} = req.query
+        const likes = await userTable.findOne({user_id}, {project: {likes: 1}}).likes || []
+        const hasThisBook = likes.indexOf(title) !== -1
+        if (hasThisBook) {
+            res.send('已经收藏')
+        } else {
+            userTable.updateOne({_id: user_id}, {
+                $push: {
+                    likes: {title}
+                }
+            })
+        }
+    })
+
+
+    app.listen(8080,'192.168.102.2', () => {
+        console.log('api serve running at http://127.0.0.1:8080')
     })
 })
 
-app.listen(8080, () => {
-    console.log('api serve running at http://127.0.0.1:8080')
-})
